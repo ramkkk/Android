@@ -34,15 +34,23 @@ import static androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom;
 import static androidx.test.espresso.matcher.ViewMatchers.isChecked;
 import static androidx.test.espresso.matcher.ViewMatchers.isClickable;
 import static androidx.test.espresso.matcher.ViewMatchers.isDescendantOfA;
+import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
+import static androidx.test.espresso.matcher.ViewMatchers.isDisplayingAtLeast;
 import static androidx.test.espresso.matcher.ViewMatchers.isEnabled;
 import static androidx.test.espresso.matcher.ViewMatchers.isFocusable;
 import static androidx.test.espresso.matcher.ViewMatchers.isFocused;
 import static androidx.test.espresso.matcher.ViewMatchers.isNotChecked;
+import static androidx.test.espresso.matcher.ViewMatchers.isNotClickable;
+import static androidx.test.espresso.matcher.ViewMatchers.isNotEnabled;
+import static androidx.test.espresso.matcher.ViewMatchers.isNotFocusable;
+import static androidx.test.espresso.matcher.ViewMatchers.isNotFocused;
+import static androidx.test.espresso.matcher.ViewMatchers.isNotSelected;
 import static androidx.test.espresso.matcher.ViewMatchers.isRoot;
 import static androidx.test.espresso.matcher.ViewMatchers.isSelected;
 import static androidx.test.espresso.matcher.ViewMatchers.supportsInputMethods;
 import static androidx.test.espresso.matcher.ViewMatchers.withAlpha;
 import static androidx.test.espresso.matcher.ViewMatchers.withChild;
+import static androidx.test.espresso.matcher.ViewMatchers.withClassName;
 import static androidx.test.espresso.matcher.ViewMatchers.withContentDescription;
 import static androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility;
 import static androidx.test.espresso.matcher.ViewMatchers.withHint;
@@ -56,19 +64,27 @@ import static androidx.test.espresso.matcher.ViewMatchers.withTagKey;
 import static androidx.test.espresso.matcher.ViewMatchers.withTagValue;
 import static androidx.test.espresso.matcher.ViewMatchers.withText;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.startsWith;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.junit.rules.ExpectedException.none;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import android.content.Context;
+import android.content.res.Resources;
 import android.graphics.Color;
+import android.graphics.Point;
 import android.graphics.Rect;
 import android.os.Build;
+import android.os.Build.VERSION;
 import androidx.annotation.NonNull;
 import android.text.InputType;
 import android.text.Spannable;
@@ -95,7 +111,7 @@ import androidx.test.annotation.UiThreadTest;
 import androidx.test.espresso.matcher.ViewMatchers.Visibility;
 import androidx.test.espresso.util.HumanReadables;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
-import androidx.test.filters.MediumTest;
+import androidx.test.filters.LargeTest;
 import androidx.test.filters.SdkSuppress;
 import androidx.test.ui.app.R;
 import com.google.common.collect.Lists;
@@ -110,9 +126,10 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
+import org.mockito.stubbing.Answer;
 
 /** Unit tests for {@link ViewMatchers}. */
-@MediumTest
+@LargeTest
 @RunWith(AndroidJUnit4.class)
 public class ViewMatchersTest {
 
@@ -146,6 +163,44 @@ public class ViewMatchersTest {
   }
 
   @Test
+  public void isAssignableFrom_description() {
+    assertThat(
+        getDescription(isAssignableFrom(Button.class)),
+        is("is assignable from class <" + Button.class + ">"));
+  }
+
+  @Test
+  public void isAssignableFrom_mismatchDescription() {
+    View view = new View(context);
+    assertThat(
+        getMismatchDescription(isAssignableFrom(Spinner.class), view),
+        is("view.getClass() was <" + View.class + ">"));
+  }
+
+  @Test
+  public void withClassNameTest() {
+    TextView textView = new TextView(context);
+    assertTrue(withClassName(is(TextView.class.getName())).matches(textView));
+    assertTrue(withClassName(endsWith("TextView")).matches(textView));
+    assertFalse(withClassName(startsWith("test")).matches(textView));
+  }
+
+  @Test
+  public void withClassName_description() {
+    Matcher<String> matcher = is(TextView.class.getName());
+    assertThat(
+        getDescription(withClassName(matcher)),
+        is("view.getClass().getName() matches: " + getDescription(matcher)));
+  }
+
+  @Test
+  public void withClassName_mismatchDescription() {
+    assertThat(
+        getMismatchDescription(withClassName(is(TextView.class.getName())), new Button(context)),
+        is("view.getClass().getName() was \"" + Button.class.getName() + "\""));
+  }
+
+  @Test
   public void withContentDescriptionCharSequence() {
     View view = new View(context);
     view.setContentDescription(null);
@@ -171,6 +226,19 @@ public class ViewMatchersTest {
     CharSequence testText = "test text!";
     view.setContentDescription(testText);
     assertTrue(hasContentDescription().matches(view));
+  }
+
+  @Test
+  public void hasContentDescription_description() {
+    assertThat(
+        getDescription(hasContentDescription()), is("view.getContentDescription() is not null"));
+  }
+
+  @Test
+  public void hasContentDescription_mismatchDescription() {
+    assertThat(
+        getMismatchDescription(hasContentDescription(), new View(context)),
+        is("view.getContentDescription() was null"));
   }
 
   @Test
@@ -200,11 +268,75 @@ public class ViewMatchersTest {
   }
 
   @Test
+  public void withContentDescriptionCharSequence_description() {
+    Matcher<CharSequence> matcher = is("charsequence");
+    assertThat(
+        getDescription(withContentDescription(matcher)),
+        is("view.getContentDescription() " + getDescription(matcher)));
+  }
+
+  @Test
+  public void withContentDescriptionCharSequence_mismatchDescription() {
+    View view = new View(context);
+    view.setContentDescription("blah");
+    Matcher<CharSequence> matcher = is("charsequence");
+    assertThat(
+        getMismatchDescription(withContentDescription(matcher), view),
+        is("view.getContentDescription() " + getMismatchDescription(matcher, "blah")));
+  }
+
+  @Test
+  public void withContentDescriptionString_description() {
+    Matcher<String> matcher = is("string");
+    assertThat(
+        getDescription(withContentDescription(matcher)),
+        is("view.getContentDescription() " + getDescription(matcher)));
+  }
+
+  @Test
+  public void withContentDescriptionString_mismatchDescription() {
+    View view = new View(context);
+    view.setContentDescription("blah");
+    Matcher<String> matcher = is("string");
+    assertThat(
+        getMismatchDescription(withContentDescription(matcher), view),
+        is("view.getContentDescription() " + getMismatchDescription(matcher, "blah")));
+  }
+
+  @Test
   public void withContentDescriptionFromResourceId() {
     View view = new View(context);
     view.setContentDescription(context.getString(R.string.something));
     assertFalse(withContentDescription(R.string.other_string).matches(view));
     assertTrue(withContentDescription(R.string.something).matches(view));
+  }
+
+  @Test
+  public void withContentDescriptionFromResourceId_description_noResourceName() {
+    assertThat(
+        getDescription(withContentDescription(R.string.other_string)),
+        is("view.getContentDescription() to match resource id <" + R.string.other_string + ">"));
+  }
+
+  @Test
+  public void withContentDescriptionFromResourceId_description_withResourceName() {
+    Matcher<View> matcher = withContentDescription(R.string.other_string);
+    matcher.matches(new View(context));
+    assertThat(
+        getDescription(matcher),
+        is(
+            "view.getContentDescription() to match resource id <"
+                + R.string.other_string
+                + ">[other_string] with value \"Goodbye!!\""));
+  }
+
+  @Test
+  public void withContentDescriptionFromResourceId_mismatchDescription() {
+    View view = new View(context);
+    view.setContentDescription("test");
+    assertThat(
+        getMismatchDescription(withContentDescription(R.string.other_string), view),
+        is("view.getContentDescription() was \"test\""));
   }
 
   @Test
@@ -218,7 +350,7 @@ public class ViewMatchersTest {
 
   @Test
   public void withId_describeWithNoResourceLookup() {
-    assertThat(withId(5).toString(), is("with id is <5>"));
+    assertThat(getDescription(withId(5)), is("view.getId() is <5>"));
   }
 
   @Test
@@ -227,7 +359,7 @@ public class ViewMatchersTest {
     Matcher<View> matcher = withId(5);
     // Running matches will allow withId to grab resources from view Context
     matcher.matches(view);
-    assertThat(matcher.toString(), is("with id is <5 (resource name not found)>"));
+    assertThat(getDescription(matcher), is("view.getId() is <5 (resource name not found)>"));
   }
 
   @Test
@@ -236,24 +368,48 @@ public class ViewMatchersTest {
     Matcher<View> matcher = withId(R.id.testId1);
     // Running matches will allow withId to grab resources from view Context
     matcher.matches(view);
-    assertThat(matcher.toString(), containsString("id/testId1"));
+    assertThat(
+        getDescription(matcher),
+        is("view.getId() is <" + R.id.testId1 + "/" + context.getPackageName() + ":id/testId1>"));
+  }
+
+  @Test
+  public void withId_describeMismatchWithNoResourceLookup() {
+    View view = new View(context);
+    view.setId(7);
+    assertThat(
+        getMismatchDescription(withId(5), view),
+        is("view.getId() was <7 (resource name not found)>"));
+  }
+
+  @Test
+  public void withId_describeMismatchWithFailedResourceLookup() {
+    View view = new View(context);
+    view.setId(7);
+    Matcher<View> matcher = withId(5);
+    // Running matches will allow withId to grab resources from view Context
+    matcher.matches(view);
+    assertThat(
+        getMismatchDescription(matcher, view),
+        is("view.getId() was <7 (resource name not found)>"));
+  }
+
+  @Test
+  public void withId_describeMismatchWithResourceLookup() {
+    View view = new View(context);
+    view.setId(R.id.testId1);
+    Matcher<View> matcher = withId(R.id.testId2);
+    // Running matches will allow withId to grab resources from view Context
+    matcher.matches(view);
+    assertThat(
+        getMismatchDescription(matcher, view),
+        is("view.getId() was <" + R.id.testId1 + "/" + context.getPackageName() + ":id/testId1>"));
   }
 
   @Test
   public void withTagNull() {
-    try {
-      withTagKey(0, null);
-      fail("Should of thrown NPE");
-    } catch (NullPointerException e) {
-      // Good, this is expected.
-    }
-
-    try {
-      withTagValue(null);
-      fail("Should of thrown NPE");
-    } catch (NullPointerException e) {
-      // Good, this is expected.
-    }
+    assertThrows(NullPointerException.class, () -> withTagKey(0, null));
+    assertThrows(NullPointerException.class, () -> withTagValue(null));
   }
 
   @Test
@@ -267,6 +423,23 @@ public class ViewMatchersTest {
     assertTrue(withTagValue(is((Object) testObjectText)).matches(view));
     assertFalse(withTagValue(is((Object) "blah")).matches(view));
     assertFalse(withTagValue(is((Object) "")).matches(view));
+  }
+
+  @Test
+  public void withTagValue_description() {
+    Matcher<Object> matcher = is((Object) "blah");
+    assertThat(
+        getDescription(withTagValue(matcher)), is("view.getTag() " + getDescription(matcher)));
+  }
+
+  @Test
+  public void withTagValue_mismatchDescription() {
+    View view = new View(context);
+    view.setTag("tag");
+    Matcher<Object> matcher = is((Object) "blah");
+    assertThat(
+        getMismatchDescription(withTagValue(matcher), view),
+        is("view.getTag() " + getMismatchDescription(matcher, "tag")));
   }
 
   @Test
@@ -310,6 +483,24 @@ public class ViewMatchersTest {
     assertFalse(withTagKey(R.id.testId3, is((Object) testObjectText1)).matches(view));
     assertFalse(withTagKey(65535, is((Object) testObjectText1)).matches(view));
     assertFalse(withTagValue(is((Object) "blah")).matches(view));
+  }
+
+  @Test
+  public void withTagKeyObject_description() {
+    Matcher<String> matcher = is("test");
+    assertThat(
+        getDescription(withTagKey(R.id.testId1, matcher)),
+        is("view.getTag(" + R.id.testId1 + ") " + getDescription(matcher)));
+  }
+
+  @Test
+  public void withTagKeyObject_mismatchDescription() {
+    View view = new View(context);
+    view.setTag(R.id.testId1, "test1");
+    Matcher<String> matcher = is("test2");
+    assertThat(
+        getMismatchDescription(withTagKey(R.id.testId1, matcher), view),
+        is("view.getTag(" + R.id.testId1 + ") " + getMismatchDescription(matcher, "test1")));
   }
 
   @Test
@@ -487,6 +678,37 @@ public class ViewMatchersTest {
   }
 
   @Test
+  public void hasDescendant_description() {
+    Matcher<View> matcher = isAssignableFrom(TextView.class);
+    assertThat(
+        getDescription(hasDescendant(matcher)),
+        is(
+            "(view "
+                + getDescription(Matchers.isA(ViewGroup.class))
+                + " and has descendant matching "
+                + getDescription(matcher)
+                + ")"));
+  }
+
+  @Test
+  public void hasDescendant_mismatchDescription_notViewGroup() {
+    View view = new View(context);
+    assertThat(
+        getMismatchDescription(hasDescendant(isAssignableFrom(TextView.class)), view),
+        is("view " + getMismatchDescription(Matchers.isA(ViewGroup.class), view)));
+  }
+
+  @Test
+  public void hasDescendant_mismatchDescription_noMatch() {
+    ViewGroup parent = new LinearLayout(context);
+    parent.addView(new View(context));
+    Matcher<View> matcher = isAssignableFrom(TextView.class);
+    assertThat(
+        getMismatchDescription(hasDescendant(matcher), parent),
+        is("no descendant matching " + getDescription(matcher) + " was found"));
+  }
+
+  @Test
   public void isDescendantOfATest() {
     View v = new TextView(context);
     ViewGroup parent = new RelativeLayout(context);
@@ -496,6 +718,176 @@ public class ViewMatchersTest {
     assertTrue(isDescendantOfA(isAssignableFrom(RelativeLayout.class)).matches(v));
     assertTrue(isDescendantOfA(isAssignableFrom(ScrollView.class)).matches(v));
     assertFalse(isDescendantOfA(isAssignableFrom(LinearLayout.class)).matches(v));
+  }
+
+  @Test
+  public void isDescendantOfA_description() {
+    Matcher<View> matcher = isAssignableFrom(LinearLayout.class);
+    assertThat(
+        getDescription(isDescendantOfA(matcher)),
+        is("is descendant of a view matching " + getDescription(matcher)));
+  }
+
+  @Test
+  public void isDescendantOfA_mismatchDescription_parentNotView() {
+    View view = new View(context);
+    Matcher<View> matcher = isAssignableFrom(LinearLayout.class);
+    assertThat(
+        getMismatchDescription(isDescendantOfA(matcher), view),
+        is("none of the ancestors match " + getDescription(matcher)));
+  }
+
+  @Test
+  public void isDisplayedTest() {
+    GlobalVisibleRectProvider providerMock = mock(GlobalVisibleRectProvider.class);
+    View view = new GlobalVisibleRectTestView(context, providerMock);
+    Matcher<View> matcher = isDisplayed();
+
+    view.setVisibility(View.GONE);
+    assertFalse(matcher.matches(view));
+
+    view.setVisibility(View.INVISIBLE);
+    assertFalse(matcher.matches(view));
+
+    when(providerMock.get(any(), any())).thenReturn(false);
+    view.setVisibility(View.VISIBLE);
+    assertFalse(matcher.matches(view));
+
+    when(providerMock.get(any(), any())).thenReturn(true);
+    assertTrue(matcher.matches(view));
+  }
+
+  @Test
+  public void isDisplayed_description() {
+    assertThat(
+        getDescription(isDisplayed()),
+        is(
+            "("
+                + getDescription(withEffectiveVisibility(Visibility.VISIBLE))
+                + " and view.getGlobalVisibleRect() to return non-empty rectangle)"));
+  }
+
+  @Test
+  public void isDisplayed_mismatchDescription_wrongVisibility() {
+    View view = new View(context);
+    view.setVisibility(View.GONE);
+    assertThat(
+        getMismatchDescription(isDisplayed(), view),
+        is(getMismatchDescription(withEffectiveVisibility(Visibility.VISIBLE), view)));
+  }
+
+  @Test
+  public void isDisplayed_mismatchDescription_emptyRectangle() {
+    GlobalVisibleRectProvider providerMock = mock(GlobalVisibleRectProvider.class);
+    View view = new GlobalVisibleRectTestView(context, providerMock);
+    view.setVisibility(View.VISIBLE);
+    when(providerMock.get(any(), any())).thenReturn(false);
+    assertThat(
+        getMismatchDescription(isDisplayed(), view),
+        is("view.getGlobalVisibleRect() returned empty rectangle"));
+  }
+
+  @Test
+  public void isDisplayingAtLeast_invalidPercentageRange() {
+    assertThrows(IllegalArgumentException.class, () -> isDisplayingAtLeast(-1));
+    assertThrows(IllegalArgumentException.class, () -> isDisplayingAtLeast(101));
+  }
+
+  @Test
+  public void isDisplayingAtLeastTest() {
+    GlobalVisibleRectProvider providerMock = mock(GlobalVisibleRectProvider.class);
+    View view = new GlobalVisibleRectTestView(context, providerMock);
+
+    view.setVisibility(View.GONE);
+    assertFalse(isDisplayingAtLeast(5).matches(view));
+
+    // Set the view to be 100x100: 10,000 pixels
+    view.setVisibility(View.VISIBLE);
+    view.layout(0, 0, 100, 100);
+    when(providerMock.get(any(), any()))
+        .then(
+            (Answer<Boolean>)
+                invocation -> {
+                  // Set the output rectangle to 50x50: 2500 pixels
+                  Rect argRect = invocation.getArgument(0);
+                  argRect.set(0, 0, 50, 50);
+                  return true;
+                });
+
+    assertFalse(isDisplayingAtLeast(30).matches(view));
+    assertTrue(isDisplayingAtLeast(20).matches(view));
+  }
+
+  @Test
+  public void isDisplayingAtLeast_description() {
+    assertThat(
+        getDescription(isDisplayingAtLeast(15)),
+        is(
+            "("
+                + getDescription(withEffectiveVisibility(Visibility.VISIBLE))
+                + " and view.getGlobalVisibleRect() covers at least <15> percent of the view's"
+                + " area)"));
+  }
+
+  @Test
+  public void isDisplayingAtLeast_mismatchDescription_wrongVisibility() {
+    View view = new View(context);
+    view.setVisibility(View.GONE);
+    assertThat(
+        getMismatchDescription(isDisplayingAtLeast(15), view),
+        is(getMismatchDescription(withEffectiveVisibility(Visibility.VISIBLE), view)));
+  }
+
+  @Test
+  public void isDisplayingAtLeast_mismatchDescription_notVisible() {
+    GlobalVisibleRectProvider providerMock = mock(GlobalVisibleRectProvider.class);
+    View view = new GlobalVisibleRectTestView(context, providerMock);
+    view.setVisibility(View.VISIBLE);
+    when(providerMock.get(any(), any())).thenReturn(false);
+    assertThat(
+        getMismatchDescription(isDisplayingAtLeast(15), view),
+        is("view was <0> percent visible to the user"));
+  }
+
+  @Test
+  public void isDisplayingAtLeast_mismatchDescription_lowVisibility() {
+    GlobalVisibleRectProvider providerMock = mock(GlobalVisibleRectProvider.class);
+    View view = new GlobalVisibleRectTestView(context, providerMock);
+    view.setVisibility(View.VISIBLE);
+    // Set the area of the view to 100x100 = 10,000
+    view.layout(0, 0, 100, 100);
+    when(providerMock.get(any(), any()))
+        .then(
+            (Answer<Boolean>)
+                invocation -> {
+                  // Set the output rectangle to 50x50: 2500 pixels
+                  Rect argRect = invocation.getArgument(0);
+                  argRect.set(0, 0, 50, 50);
+                  return true;
+                });
+    assertThat(
+        getMismatchDescription(isDisplayingAtLeast(35), view),
+        is("view was <25> percent visible to the user"));
+  }
+
+  /** This interface is used to mock the {@link View#getGlobalVisibleRect(Rect, Point)} method. */
+  private interface GlobalVisibleRectProvider {
+    boolean get(Rect r, Point offset);
+  }
+
+  private static class GlobalVisibleRectTestView extends View {
+
+    private final GlobalVisibleRectProvider provider;
+
+    GlobalVisibleRectTestView(Context context, GlobalVisibleRectProvider provider) {
+      super(context);
+      this.provider = provider;
+    }
+
+    @Override
+    public final boolean getGlobalVisibleRect(Rect r, Point globalOffset) {
+      return provider.get(r, globalOffset);
+    }
   }
 
   private static final class MismatchTestMatcher<T> extends BaseMatcher<T> {
@@ -624,13 +1016,88 @@ public class ViewMatchersTest {
   }
 
   @Test
+  public void withEffectiveVisibility_description() {
+    assertThat(
+        getDescription(withEffectiveVisibility(Visibility.VISIBLE)),
+        is("view has effective visibility <VISIBLE>"));
+    assertThat(
+        getDescription(withEffectiveVisibility(Visibility.INVISIBLE)),
+        is("view has effective visibility <INVISIBLE>"));
+    assertThat(
+        getDescription(withEffectiveVisibility(Visibility.GONE)),
+        is("view has effective visibility <GONE>"));
+  }
+
+  @Test
+  public void withEffectiveVisibility_visible_mismatchDescription() {
+    View view = new View(context);
+    view.setVisibility(View.INVISIBLE);
+    assertThat(
+        getMismatchDescription(withEffectiveVisibility(Visibility.VISIBLE), view),
+        is("view.getVisibility() was <INVISIBLE>"));
+
+    // Make the visible view invisible by giving it an invisible parent.
+    ViewGroup parent = new RelativeLayout(context);
+    parent.addView(view);
+    view.setVisibility(View.VISIBLE);
+    parent.setVisibility(View.INVISIBLE);
+    assertThat(
+        getMismatchDescription(withEffectiveVisibility(Visibility.VISIBLE), view),
+        is("ancestor <" + parent + ">'s getVisibility() was <INVISIBLE>"));
+  }
+
+  @Test
+  public void withEffectiveVisibility_invisible_mismatchDescription() {
+    View view = new View(context);
+    view.setVisibility(View.VISIBLE);
+    assertThat(
+        getMismatchDescription(withEffectiveVisibility(Visibility.INVISIBLE), view),
+        is("neither view nor its ancestors have getVisibility() set to <INVISIBLE>"));
+  }
+
+  @Test
+  public void withEffectiveVisibility_gone_mismatchDescription() {
+    View view = new View(context);
+    view.setVisibility(View.VISIBLE);
+    assertThat(
+        getMismatchDescription(withEffectiveVisibility(Visibility.GONE), view),
+        is("neither view nor its ancestors have getVisibility() set to <GONE>"));
+  }
+
+  @Test
   public void isClickableTest() {
     View clickable = new View(context);
     clickable.setClickable(true);
     View notClickable = new View(context);
     notClickable.setClickable(false);
     assertTrue(isClickable().matches(clickable));
+    assertTrue(isNotClickable().matches(notClickable));
     assertFalse(isClickable().matches(notClickable));
+    assertFalse(isNotClickable().matches(clickable));
+  }
+
+  @Test
+  public void isClickable_description() {
+    assertThat(getDescription(isClickable()), is("view.isClickable() is <true>"));
+  }
+
+  @Test
+  public void isClickable_mismatchDescription() {
+    assertThat(
+        getMismatchDescription(isClickable(), new View(context)),
+        is("view.isClickable() was <false>"));
+  }
+
+  @Test
+  public void isNotClickable_description() {
+    assertThat(getDescription(isNotClickable()), is("view.isClickable() is <false>"));
+  }
+
+  @Test
+  public void isNotClickable_mismatchDescription() {
+    View view = new View(context);
+    view.setClickable(true);
+    assertThat(getMismatchDescription(isNotClickable(), view), is("view.isClickable() was <true>"));
   }
 
   @Test
@@ -640,7 +1107,33 @@ public class ViewMatchersTest {
     View notEnabled = new View(context);
     notEnabled.setEnabled(false);
     assertTrue(isEnabled().matches(enabled));
+    assertTrue(isNotEnabled().matches(notEnabled));
     assertFalse(isEnabled().matches(notEnabled));
+    assertFalse(isNotEnabled().matches(enabled));
+  }
+
+  @Test
+  public void isEnabled_description() {
+    assertThat(getDescription(isEnabled()), is("view.isEnabled() is <true>"));
+  }
+
+  @Test
+  public void isEnabled_mismatchDescription() {
+    View view = new View(context);
+    view.setEnabled(false);
+    assertThat(getMismatchDescription(isEnabled(), view), is("view.isEnabled() was <false>"));
+  }
+
+  @Test
+  public void isNotEnabled_description() {
+    assertThat(getDescription(isNotEnabled()), is("view.isEnabled() is <false>"));
+  }
+
+  @Test
+  public void isNotEnabled_mismatchDescription() {
+    View view = new View(context);
+    view.setEnabled(true);
+    assertThat(getMismatchDescription(isNotEnabled(), view), is("view.isEnabled() was <true>"));
   }
 
   @Test
@@ -650,7 +1143,33 @@ public class ViewMatchersTest {
     View notFocusable = new View(context);
     notFocusable.setFocusable(false);
     assertTrue(isFocusable().matches(focusable));
+    assertTrue(isNotFocusable().matches(notFocusable));
     assertFalse(isFocusable().matches(notFocusable));
+    assertFalse(isNotFocusable().matches(focusable));
+  }
+
+  @Test
+  public void isFocusable_description() {
+    assertThat(getDescription(isFocusable()), is("view.isFocusable() is <true>"));
+  }
+
+  @Test
+  public void isFocusable_mismatchDescription() {
+    View view = new View(context);
+    view.setFocusable(false);
+    assertThat(getMismatchDescription(isFocusable(), view), is("view.isFocusable() was <false>"));
+  }
+
+  @Test
+  public void isNotFocusable_description() {
+    assertThat(getDescription(isNotFocusable()), is("view.isFocusable() is <false>"));
+  }
+
+  @Test
+  public void isNotFocusable_mismatchDescription() {
+    View view = new View(context);
+    view.setFocusable(true);
+    assertThat(getMismatchDescription(isNotFocusable(), view), is("view.isFocusable() was <true>"));
   }
 
   @Test
@@ -662,7 +1181,35 @@ public class ViewMatchersTest {
     View notFocused = new View(context);
     assertTrue(focused.isFocused());
     assertTrue(isFocused().matches(focused));
+    assertFalse(isNotFocused().matches(focused));
     assertFalse(isFocused().matches(notFocused));
+    assertTrue(isNotFocused().matches(notFocused));
+  }
+
+  @Test
+  public void isFocused_description() {
+    assertThat(getDescription(isFocused()), is("view.isFocused() is <true>"));
+  }
+
+  @Test
+  public void isFocused_mismatchDescription() {
+    View view = new View(context);
+    view.setFocusable(false);
+    assertThat(getMismatchDescription(isFocused(), view), is("view.isFocused() was <false>"));
+  }
+
+  @Test
+  public void isNotFocused_description() {
+    assertThat(getDescription(isNotFocused()), is("view.isFocused() is <false>"));
+  }
+
+  @Test
+  public void isNotFocused_mismatchDescription() {
+    View view = new View(context);
+    view.setFocusable(true);
+    view.setFocusableInTouchMode(true);
+    view.requestFocus();
+    assertThat(getMismatchDescription(isNotFocused(), view), is("view.isFocused() was <true>"));
   }
 
   @Test
@@ -672,7 +1219,33 @@ public class ViewMatchersTest {
     View notSelected = new View(context);
     notSelected.setSelected(false);
     assertTrue(isSelected().matches(selected));
+    assertTrue(isNotSelected().matches(notSelected));
     assertFalse(isSelected().matches(notSelected));
+    assertFalse(isNotSelected().matches(selected));
+  }
+
+  @Test
+  public void isSelected_description() {
+    assertThat(getDescription(isSelected()), is("view.isSelected() is <true>"));
+  }
+
+  @Test
+  public void isSelected_mismatchDescription() {
+    View view = new View(context);
+    view.setSelected(false);
+    assertThat(getMismatchDescription(isSelected(), view), is("view.isSelected() was <false>"));
+  }
+
+  @Test
+  public void isNotSelected_description() {
+    assertThat(getDescription(isNotSelected()), is("view.isSelected() is <false>"));
+  }
+
+  @Test
+  public void isNotSelected_mismatchDescription() {
+    View view = new View(context);
+    view.setSelected(true);
+    assertThat(getMismatchDescription(isNotSelected(), view), is("view.isSelected() was <true>"));
   }
 
   @Test
@@ -866,7 +1439,14 @@ public class ViewMatchersTest {
 
   @Test
   public void withAlpha_description() {
-    assertThat(withAlpha(0.5f).toString(), is("has alpha: <0.5F>"));
+    assertThat(getDescription(withAlpha(0.5f)), is("view.getAlpha() is <0.5F>"));
+  }
+
+  @Test
+  public void withAlpha_mismatchDescription() {
+    View view = new View(context);
+    view.setAlpha(0.25f);
+    assertThat(getMismatchDescription(withAlpha(0.5f), view), is("view.getAlpha() was <0.25F>"));
   }
 
   @Test
@@ -893,6 +1473,24 @@ public class ViewMatchersTest {
   }
 
   @Test
+  public void withParent_description() {
+    Matcher<View> matcher = isAssignableFrom(LinearLayout.class);
+    assertThat(
+        getDescription(withParent(matcher)), is("view.getParent() " + getDescription(matcher)));
+  }
+
+  @Test
+  public void withParent_mismatchDescription() {
+    View view = new TextView(context);
+    ViewGroup parent = new RelativeLayout(context);
+    parent.addView(view);
+    Matcher<View> matcher = isAssignableFrom(LinearLayout.class);
+    assertThat(
+        getMismatchDescription(withParent(matcher), view),
+        is("view.getParent() " + getMismatchDescription(matcher, parent)));
+  }
+
+  @Test
   public void withChildTest() {
     View view1 = new TextView(context);
     View view2 = new TextView(context);
@@ -915,6 +1513,37 @@ public class ViewMatchersTest {
   }
 
   @Test
+  public void withChild_description() {
+    Matcher<View> matcher = isAssignableFrom(TextView.class);
+    assertThat(
+        getDescription(withChild(matcher)),
+        is(
+            "(view "
+                + getDescription(Matchers.isA(ViewGroup.class))
+                + " and has child matching: "
+                + getDescription(matcher)
+                + ")"));
+  }
+
+  @Test
+  public void withChild_mismatchDescription_notViewGroup() {
+    View view = new View(context);
+    assertThat(
+        getMismatchDescription(withChild(isAssignableFrom(TextView.class)), view),
+        is("view " + getMismatchDescription(Matchers.isA(ViewGroup.class), view)));
+  }
+
+  @Test
+  public void withChild_mismatchDescription_noMatch() {
+    ViewGroup parent = new LinearLayout(context);
+    parent.addView(new TextView(context));
+    parent.addView(new TextView(context));
+    assertThat(
+        getMismatchDescription(withChild(isAssignableFrom(Button.class)), parent),
+        is("All <2> children did not match"));
+  }
+
+  @Test
   public void isRootViewTest() {
     ViewGroup rootView =
         new ViewGroup(context) {
@@ -927,6 +1556,26 @@ public class ViewMatchersTest {
 
     assertTrue(isRoot().matches(rootView));
     assertFalse(isRoot().matches(view));
+  }
+
+  @Test
+  public void isRoot_description() {
+    assertThat(getDescription(isRoot()), is("view.getRootView() to equal view"));
+  }
+
+  @Test
+  public void isRoot_mismatchDescription() {
+    ViewGroup rootView =
+        new ViewGroup(context) {
+          @Override
+          protected void onLayout(boolean changed, int l, int t, int r, int b) {}
+        };
+
+    View view = new View(context);
+    rootView.addView(view);
+    assertThat(
+        getMismatchDescription(isRoot(), view),
+        is("view.getRootView() was <" + view.getRootView() + ">"));
   }
 
   @Test
@@ -943,6 +1592,47 @@ public class ViewMatchersTest {
     // Test that hasSibling should then fail to match against itself (`withText` will match v1).
     assertFalse(hasSibling(withText("Bill Odama")).matches(v1));
     assertFalse(hasSibling(is(v3)).matches(parent));
+  }
+
+  @Test
+  public void hasSibling_description() {
+    Matcher<View> matcher = withText("View");
+    assertThat(
+        getDescription(hasSibling(matcher)),
+        is(
+            "(view.getParent() "
+                + getDescription(Matchers.isA(ViewGroup.class))
+                + " and has a sibling matching "
+                + getDescription(matcher)
+                + ")"));
+  }
+
+  @Test
+  public void hasSibling_mismatchDescription_parentMismatch() {
+    TextView view = new TextView(context);
+    assertThat(
+        getMismatchDescription(hasSibling(withText("View")), view),
+        is("view.getParent() " + getMismatchDescription(Matchers.isA(ViewGroup.class), null)));
+  }
+
+  @Test
+  public void hasSibling_mismatchDescription_noSiblings() {
+    TextView v1 = new TextView(context);
+    ViewGroup parent = new LinearLayout(context);
+    parent.addView(v1);
+    assertThat(getMismatchDescription(hasSibling(withText("View")), v1), is("no siblings found"));
+  }
+
+  @Test
+  public void hasSibling_mismatchDescription_noMatch() {
+    TextView v1 = new TextView(context);
+    TextView v2 = new TextView(context);
+    ViewGroup parent = new LinearLayout(context);
+    parent.addView(v1);
+    parent.addView(v2);
+    assertThat(
+        getMismatchDescription(hasSibling(withText("View")), v1),
+        is("none of the <1> siblings match"));
   }
 
   @UiThreadTest
@@ -962,12 +1652,57 @@ public class ViewMatchersTest {
   }
 
   @Test
+  public void hasImeAction_description() {
+    Matcher<Integer> matcher = is(EditorInfo.IME_ACTION_GO);
+    assertThat(
+        getDescription(hasImeAction(matcher)),
+        is(
+            "(view.onCreateInputConnection() is not null and editorInfo.actionId "
+                + getDescription(matcher)
+                + ")"));
+  }
+
+  @Test
+  @UiThreadTest
+  public void hasImeAction_mismatchDescription_nullInputConnection() {
+    assertThat(
+        getMismatchDescription(hasImeAction(EditorInfo.IME_ACTION_GO), new View(context)),
+        is("view.onCreateInputConnection() was null"));
+  }
+
+  @Test
+  @UiThreadTest
+  public void hasImeAction_mismatchDescription_wrongActionId() {
+    EditText view = new EditText(context);
+    Matcher<Integer> matcher = is(EditorInfo.IME_ACTION_GO);
+
+    view.setImeOptions(EditorInfo.IME_ACTION_NEXT);
+    assertThat(
+        getMismatchDescription(hasImeAction(matcher), view),
+        is("editorInfo.actionId " + getMismatchDescription(matcher, EditorInfo.IME_ACTION_NEXT)));
+  }
+
+  @Test
   @UiThreadTest
   public void supportsInputMethodsTest() {
     Button button = new Button(context);
     EditText editText = new EditText(context);
     assertFalse(supportsInputMethods().matches(button));
     assertTrue(supportsInputMethods().matches(editText));
+  }
+
+  @Test
+  public void supportsInputMethods_description() {
+    assertThat(
+        getDescription(supportsInputMethods()), is("view.onCreateInputConnection() is not null"));
+  }
+
+  @Test
+  @UiThreadTest
+  public void supportsInputMethods_mismatchDescription() {
+    assertThat(
+        getMismatchDescription(supportsInputMethods(), new View(context)),
+        is("view.onCreateInputConnection() was null"));
   }
 
   @Test
@@ -1263,6 +1998,46 @@ public class ViewMatchersTest {
   }
 
   @Test
+  public void withParentIndex_description() {
+    assertThat(
+        getDescription(withParentIndex(1)),
+        is(
+            "(view.getParent() "
+                + getDescription(Matchers.isA(ViewGroup.class))
+                + " and is at child index <1>)"));
+  }
+
+  @Test
+  public void withParentIndex_mismatchDescription_wrongParentType() {
+    assertThat(
+        getMismatchDescription(withParentIndex(1), new View(context)),
+        is("view.getParent() " + getMismatchDescription(Matchers.isA(ViewGroup.class), null)));
+  }
+
+  @Test
+  public void withParentIndex_mismatchDescription_notEnoughChildren() {
+    ViewGroup parent = new LinearLayout(context);
+    View view0 = new View(context);
+    parent.addView(view0);
+
+    assertThat(
+        getMismatchDescription(withParentIndex(1), view0), is("parent only has <1> children"));
+  }
+
+  @Test
+  public void withParentIndex_mismatchDescription_wrongChildIndex() {
+    ViewGroup parent = new LinearLayout(context);
+    View view0 = new View(context);
+    View view1 = new View(context);
+    parent.addView(view0);
+    parent.addView(view1);
+
+    assertThat(
+        getMismatchDescription(withParentIndex(1), view0),
+        is("child view at index <1> was <" + view1 + ">"));
+  }
+
+  @Test
   public void hasChildCount_twoChildren() {
     LinearLayout linearLayout = new LinearLayout(context);
     linearLayout.addView(new View(context));
@@ -1341,6 +2116,59 @@ public class ViewMatchersTest {
     assertTrue(withResourceName("testId1").matches(view));
     assertFalse(withResourceName("testId2").matches(view));
     assertFalse(withResourceName("3o1298756").matches(view));
+  }
+
+  @Test
+  public void withResourceName_description() {
+    Matcher<String> matcher = is("test");
+    assertThat(
+        getDescription(withResourceName(matcher)),
+        is("view.getId()'s resource name should match " + getDescription(matcher)));
+  }
+
+  @Test
+  public void withResourceName_mismatchDescription_noId() {
+    View view = new View(context);
+    view.setId(View.NO_ID);
+    assertThat(
+        getMismatchDescription(withResourceName("test"), view), is("view.getId() was View.NO_ID"));
+  }
+
+  @Test
+  public void withResourceName_mismatchDescription_nullResources() {
+    View view =
+        new View(context) {
+          @Override
+          public Resources getResources() {
+            return null;
+          }
+        };
+    view.setId(R.id.testId1);
+    assertThat(
+        getMismatchDescription(withResourceName("test"), view),
+        is("view.getResources() was null, can't resolve resource name"));
+  }
+
+  @Test
+  public void withResourceName_mismatchDescription_generatedId() {
+    if (VERSION.SDK_INT < 17) {
+      // View.generateViewId() is only available on SDK 17+.
+      return;
+    }
+    View view = new View(context);
+    view.setId(View.generateViewId());
+    assertThat(
+        getMismatchDescription(withResourceName("test"), view),
+        is("view.getId() was generated by a call to View.generateViewId()"));
+  }
+
+  @Test
+  public void withResourceName_mismatchDescription() {
+    View view = new View(context);
+    view.setId(R.id.testId1);
+    assertThat(
+        getMismatchDescription(withResourceName("testId2"), view),
+        is("view.getId() was <testId1>"));
   }
 
   @NonNull
